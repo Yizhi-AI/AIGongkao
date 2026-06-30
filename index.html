@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AI速算练习</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="container">
+
+<section class="screen active" id="home-screen">
+<div class="home-header"><h1>AI速算</h1></div>
+<div class="wx-promo">
+  <div class="wx-qr"><img src="AI公众号二维码.jpg" alt="易知的AI地图"></div>
+  <span class="wx-label">私人订制 · 更多工具 · 功能建议 → 公众号：易知的AI地图</span>
+</div>
+<div class="diag-banner" id="diag-banner" style="display:none"><h3>摸底测试</h3><p>20题测出你的速算弱点（约10分钟）</p>
+<button class="btn btn-primary btn-sm" onclick="handleStartDiagnostic()">开始测试</button> <button class="btn btn-ghost btn-sm" onclick="skipDiagnostic()">跳过</button></div>
+<div class="rating-card" id="rating-card" style="display:none"><div class="r-level"></div><div class="r-stars"></div><div class="r-stats"></div><div class="r-weakness"></div></div>
+<div class="daily-bar" id="daily-bar"></div>
+<div class="mode-grid">
+<div class="mode-card" onclick="handleModeClick('random')"><div class="icon">🎲</div><div class="name">随机出题</div><div class="desc">全面锻炼各类速算</div></div>
+<div class="mode-card" onclick="handleModeClick('basic')"><div class="icon">📚</div><div class="name">基础巩固</div><div class="desc">数字友好·技巧导向</div></div>
+<div class="mode-card" onclick="handleModeClick('advanced')"><div class="icon">🚀</div><div class="name">拔高挑战</div><div class="desc">数字更大·步骤更多</div></div>
+<div class="mode-card" onclick="handleModeClick('selftrain')"><div class="icon">🏷️</div><div class="name">自选练习</div><div class="desc">按运算类型选择</div></div>
+</div>
+<div class="review-row"><button class="btn btn-outline" onclick="handleModeClick('review')">🔄 错题重练</button></div>
+<div class="mode-grid">
+<div class="mode-card locked" onclick="showPlaceholder('精准出题')"><div class="lock-badge">🔒</div><div class="icon">🎯</div><div class="name">精准出题</div><div class="desc">AI弱点靶向出题</div></div>
+<div class="mode-card locked" onclick="showPlaceholder('真题模拟')"><div class="lock-badge">🔒</div><div class="icon">📋</div><div class="name">真题模拟</div><div class="desc">资料分析情境速算</div></div>
+</div>
+<div class="review-row"><button class="btn btn-ghost btn-sm btn-block" id="diag-perm-btn" onclick="handleStartDiagnostic()">📝 摸底测试</button></div>
+<div class="bottom-links">
+<button class="btn btn-ghost btn-sm" onclick="navigateTo('history')">📊 历史</button>
+<button class="btn btn-ghost btn-sm" onclick="renderDiagnosis()">📋 弱点</button>
+<button class="btn btn-ghost btn-sm" onclick="navigateTo('settings')">⚙️ 设置</button>
+</div>
+</section>
+
+<section class="screen" id="mode-select-screen">
+<div class="mode-select-header"><span class="back-btn" onclick="navigateTo('home')">←</span><h2 id="mode-select-title">选择模式</h2></div>
+<div id="mode-select-desc" class="text-muted text-sm mb-12"></div>
+<div class="tag-panel" id="tag-panel" style="display:none"><div class="section-title">选择运算类型（可多选）</div><div class="tag-chips" id="tag-chips"></div><div class="text-muted text-xs mt-8">未选择则随机抽取</div></div>
+<button class="btn btn-primary btn-block btn-lg" id="btn-start-round" onclick="handleStartRound()">开始练习（本轮10题）</button>
+<button class="btn btn-ghost btn-block mt-8" onclick="navigateTo('home')">返回首页</button>
+</section>
+
+<section class="screen" id="active-round-screen">
+<div class="round-topbar"><span class="mode-label" id="round-mode-label"></span><span class="progress-text" id="round-progress-text"></span><span class="timer" id="round-timer">00:00</span></div>
+<div class="round-progress"><div class="round-progress-fill" id="round-progress-fill"></div></div>
+<div class="question-card"><div class="q-number" id="q-number"></div><div class="q-text" id="q-text"></div></div>
+<div class="options-grid" id="options-grid"></div>
+<div class="coach-banner" id="coach-banner"></div>
+<div class="round-actions"><button class="btn btn-ghost btn-sm" id="btn-end-round" onclick="handleEndRound()">结束本轮</button></div>
+</section>
+
+<section class="screen" id="round-result-screen">
+<div class="result-header"><div class="score" id="result-score"></div><div class="meta" id="result-meta"></div></div>
+<div id="diag-trigger" class="diag-trigger-card" style="display:none"></div>
+<div class="feedback-list" id="feedback-list"></div>
+<div class="result-actions"><button class="btn btn-primary" id="btn-next-round" onclick="goNextRound()">再来一轮</button><button class="btn btn-outline" onclick="navigateTo('home')">回首页</button></div>
+</section>
+
+<section class="screen" id="history-screen">
+<div class="mode-select-header"><span class="back-btn" onclick="navigateTo('home')">←</span><h2>练习历史</h2></div>
+<div id="history-list"><div class="text-center text-muted mt-12">暂无练习记录</div></div>
+</section>
+
+<section class="screen" id="settings-screen">
+<div class="mode-select-header"><span class="back-btn" onclick="navigateTo('home')">←</span><h2>设置</h2></div>
+<div class="settings-section"><h3>教练模式</h3><div class="settings-row"><div><div class="setting-label">提醒强度</div><div class="setting-desc">40秒提示 / 60秒可跳过 / 连错警告</div></div><div class="settings-toggle" id="coach-toggle"><span class="toggle-opt" data-val="silent" onclick="setCoachMode('silent')">静默</span><span class="toggle-opt active" data-val="moderate" onclick="setCoachMode('moderate')">适度</span></div></div></div>
+<div class="settings-section"><h3>关于</h3><div class="settings-row"><div class="setting-label">版本</div><div class="text-muted text-sm">V1.0 免费版</div></div></div>
+<div class="version-info">AI速算练习工具 · 纯前端离线可用</div>
+</section>
+</div>
+
+<div class="modal-overlay" id="diagnosis-modal"><div class="modal-sheet"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2>弱点画像</h2><button class="btn btn-ghost btn-sm" onclick="closeDiagnosis()">✕</button></div><div id="diagnosis-content"></div><button class="btn btn-secondary btn-block mt-12" onclick="closeDiagnosis()">关闭</button></div></div>
+<div class="confirm-overlay" id="confirm-overlay"><div class="confirm-dialog"><p id="confirm-msg"></p><div class="confirm-actions"><button class="btn btn-secondary btn-sm" id="confirm-cancel">取消</button><button class="btn btn-primary btn-sm" id="confirm-ok">确定</button></div></div></div>
+
+<script src="js/data.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/round.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
