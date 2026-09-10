@@ -10,7 +10,7 @@ function checkMidRoundResume(){
 }
 
 function init(){
-  loadSettings(); AppState.diagnosticCompleted=DB.isDiagCompleted(); renderHome(); setTimeout(checkMidRoundResume,500);
+  DB.ensureSchema(); loadSettings(); AppState.diagnosticCompleted=DB.isDiagCompleted(); renderHome(); setTimeout(checkMidRoundResume,500);
 }
 
 document.addEventListener('DOMContentLoaded',init);

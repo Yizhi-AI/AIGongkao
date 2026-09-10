@@ -21,17 +21,22 @@ function _cooldownWeight(id){ return (_cooldown[id]&&_cooldown[id]>0)?0.2:1; }
 function _applyCooldown(ids){ ids.forEach(id=>{_cooldown[id]=3;}); Object.keys(_cooldown).forEach(k=>{if(!ids.includes(k)&&_cooldown[k]>0)_cooldown[k]--;}); }
 
 function selectTemplates(mode, tagLabels, count){
-  let pool = ALL_TEMPLATES.slice();
+  const availableIds=new Set(Object.keys(GENERATORS));
+  let pool = ALL_TEMPLATES.filter(t=>availableIds.has(t.id));
   if(mode==='selftrain'&&tagLabels&&tagLabels.length>0){ const ids=new Set(); tagLabels.forEach(l=>{(TAG_GROUPS[l]||[]).forEach(id=>ids.add(id));}); pool=pool.filter(t=>ids.has(t.id)); }
-  if(mode==='review'){ const wrongs=DB.getWrongAnswers(); const ids=[...new Set(wrongs.map(r=>r.templateId))]; pool=pool.filter(t=>ids.includes(t.id)); if(pool.length===0) pool=ALL_TEMPLATES.slice(); }
-  if(pool.length===0) pool=ALL_TEMPLATES.slice();
+  if(mode==='review'){
+    const targets=DB.getReviewTargets(true).filter(t=>availableIds.has(t.template_id));
+    if(targets.length) return shuffle(targets.slice()).slice(0,count).map(t=>t.template_id);
+  }
+  if(pool.length===0) pool=ALL_TEMPLATES.filter(t=>availableIds.has(t.id));
 
-  let items=pool.map(t=>({id:t.id, weight:(mode==='basic'?([0,0.30,0.25,0.15,0.12,0.10,0.08][t.level]||0.1):mode==='advanced'?([0,0.05,0.08,0.12,0.15,0.30,0.30][t.level]||0.1):1)*_cooldownWeight(t.id)}));
+  let items=pool.map(t=>({id:t.id, weight:(mode==='basic'?([0,0.30,0.25,0.15,0.12,0.10,0.08][t.level]||0.1):mode==='advanced'?([0,0.05,0.08,0.12,0.15,0.30,0.30][t.level]||0.1):mode==='smart'&&typeof getPlanningWeight==='function'?getPlanningWeight(t):1)*_cooldownWeight(t.id)}));
   items.forEach(it=>{ it.weight=Math.max(it.weight,0.01); });
 
   const sel=[], rem=items.slice();
   for(let i=0;i<count&&rem.length>0;i++){ const tw=rem.reduce((s,it)=>s+it.weight,0); let r=Math.random()*tw,idx=0; for(;idx<rem.length;idx++){ r-=rem[idx].weight; if(r<=0) break; } if(idx>=rem.length) idx=rem.length-1; sel.push(rem[idx].id); rem.splice(idx,1); }
-  while(sel.length<count){ const tid=randChoice(ALL_TEMPLATES).id; if(!sel.includes(tid)) sel.push(tid); }
+  const available=ALL_TEMPLATES.filter(t=>availableIds.has(t.id));
+  while(sel.length<count){ const tid=randChoice(available).id; if(!sel.includes(tid)) sel.push(tid); }
   _applyCooldown(sel); return sel;
 }
 
@@ -53,7 +58,7 @@ function makeQ(tid, text, expr, ans, ansDisp, dist, gl){
   opts.push({value:ans,display:ansDisp,trapKey:null,trapType:null}); shuffle(opts);
   const labels=['A','B','C','D']; const options=opts.map((o,i)=>({position:labels[i],...o}));
   options.forEach(o=>{ if(!o.display&&o.display!==0) o.display=_fm(o.value); });
-  return {id:'q_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),templateId:tid,templateName:tmpl?tmpl.name:tid,level:tmpl?tmpl.level:1,gapLevel:gl,question:{text,expression:expr},correct:{value:ans,display:ansDisp},options};
+  return decorateQuestion({id:'q_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),templateId:tid,templateName:tmpl?tmpl.name:tid,level:tmpl?tmpl.level:1,gapLevel:gl,question:{text,expression:expr},correct:{value:ans,display:ansDisp},options},tid);
 }
 
 // ── A: 纯算式加减 ────────────────────────────────────────────
@@ -143,7 +148,7 @@ const GENERATORS = {
   O_sum_division:gen_O,P_base_period:gen_P,T_growth_amount:gen_T,
 };
 
-function generateQuestion(tid, gl){ const g=GENERATORS[tid]; if(g) return g(gl); const tmpl=TEMPLATE_MAP[tid]; if(!tmpl) return gen_A(gl); const s=tmpl.operation_structure; if(s&&(s.includes('division')||s.includes('ratio')||s==='growth_rate'||s==='average_annual_increment'||s==='growth_amount_formula')) return gen_N(gl); if(s&&(s.includes('multiply')||s==='compound_growth_rate')) return gen_G(gl); return gen_A(gl); }
+function generateQuestion(tid, gl){ const g=GENERATORS[tid]; let q; if(g) q=g(gl); else { const tmpl=TEMPLATE_MAP[tid]; if(!tmpl) q=gen_A(gl); else { const s=tmpl.operation_structure; if(s&&(s.includes('division')||s.includes('ratio')||s==='growth_rate'||s==='average_annual_increment'||s==='growth_amount_formula')) q=gen_N(gl); else if(s&&(s.includes('multiply')||s==='compound_growth_rate')) q=gen_G(gl); else q=gen_A(gl); } } return decorateQuestion(q,tid); }
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  LAYER 5: Diagnostic Test (20 fixed questions)                  */
@@ -179,7 +184,7 @@ const DIAGNOSTIC_TEST = [
 /* ── Diagnostic Flow ───────────────────────────────────────── */
 function createDiagnosticRound(){
   const qs=DIAGNOSTIC_TEST.map(dq=>{ const opts=shuffle(dq.opts.map((o,i)=>({position:['A','B','C','D'][i],value:o.v,display:String(o.v),trapKey:o.t,trapType:o.t?'cognitive':null}))); opts.forEach((o,i)=>o.position=['A','B','C','D'][i]);
-    return {id:dq.id,templateId:dq.tid,templateName:(TEMPLATE_MAP[dq.tid]||{}).name||dq.tid,level:1,gapLevel:'narrow',question:{text:dq.text,expression:dq.text},correct:{value:dq.ans,display:String(dq.ans)},options:opts}; });
+    return decorateQuestion({id:dq.id,templateId:dq.tid,templateName:(TEMPLATE_MAP[dq.tid]||{}).name||dq.tid,level:1,gapLevel:'narrow',question:{text:dq.text,expression:dq.text},correct:{value:dq.ans,display:String(dq.ans)},options:opts},dq.tid); });
   return {id:'diag_'+Date.now(),mode:'diagnostic',gapLevel:'narrow',status:'active',questions:qs,currentIndex:0,answers:new Array(20).fill(null),coachWarnings:[],startedAt:Date.now(),completedAt:null,_hintShown:false,_skipShown:false};
 }
 

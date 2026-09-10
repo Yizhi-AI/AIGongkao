@@ -14,6 +14,7 @@ function doNav(screen){
   AppState.previousScreen=AppState.currentScreen; AppState.currentScreen=screen;
   if(screen==='home') renderHome();
   if(screen==='history') renderHistory();
+  if(screen==='mastery') renderMastery();
   if(screen==='mode-select') renderModeSelect();
   if(screen==='round-result') renderRoundResult();
 }
@@ -30,22 +31,21 @@ function updateCoachToggle(){ document.querySelectorAll('#coach-toggle .toggle-o
 
 function getRating(){
   const all=DB.getAnswers(); if(all.length<10) return null;
-  const correct=all.filter(r=>r.result.isCorrect).length;
-  const acc=Math.round(correct/all.length*100);
-  const avgMs=Math.round(all.reduce((s,r)=>s+r.timeSpentMs,0)/all.length);
-  const avgSec=Math.round(avgMs/1000);
+  const valid=all.filter(r=>!r.is_skipped),correct=valid.filter(r=>r.is_correct).length;
+  const acc=Math.round(correct/Math.max(1,valid.length)*100);
+  const medianSec=Math.round(median(valid.map(r=>r.duration_ms))/1000);
   const profile=DB.getProfile();
   const topTrap=Object.entries(profile.byTrap).sort((a,b)=>b[1].wrong-a[1].wrong)[0];
   const topTrapName=topTrap&&TRAP_TIPS[topTrap[0]]?TRAP_TIPS[topTrap[0]].label:'';
 
   let level,stars;
-  if(acc>=85&&avgSec<25){ level='速算高手'; stars='⭐⭐⭐⭐⭐'; }
-  else if(acc>=75&&avgSec<40){ level='进阶练习者'; stars='⭐⭐⭐⭐'; }
+  if(acc>=85&&medianSec<25){ level='速算高手'; stars='⭐⭐⭐⭐⭐'; }
+  else if(acc>=75&&medianSec<40){ level='进阶练习者'; stars='⭐⭐⭐⭐'; }
   else if(acc>=65){ level='稳定发挥'; stars='⭐⭐⭐'; }
   else if(acc>=50){ level='成长中'; stars='⭐⭐'; }
   else { level='新手起步'; stars='⭐'; }
 
-  return {level,stars,acc,avgSec,totalQ:all.length,topTrapName};
+  return {level,stars,acc,medianSec,totalQ:valid.length,topTrapName};
 }
 
 function renderHome(){
@@ -56,25 +56,36 @@ function renderHome(){
     rc.style.display='flex';
     rc.querySelector('.r-level').textContent=r.level;
     rc.querySelector('.r-stars').textContent=r.stars;
-    rc.querySelector('.r-stats').innerHTML='正确率 <b>'+r.acc+'%</b> · 平均每题 <b>'+r.avgSec+'s</b> · 共 '+r.totalQ+' 题';
+    rc.querySelector('.r-stats').innerHTML='正确率 <b>'+r.acc+'%</b> · 中位每题 <b>'+r.medianSec+'s</b> · 共 '+r.totalQ+' 题';
     rc.querySelector('.r-weakness').textContent=r.topTrapName?'弱项: '+r.topTrapName:'';
   } else { rc.style.display='none'; }
 
-  document.getElementById('daily-bar').innerHTML='<div class="label">今日练习</div><div class="progress-track"><div class="progress-fill" style="width:'+(ds.roundsCompleted/5*100)+'%"></div></div><div class="stats">'+ds.roundsCompleted+'/5轮 · 共'+ds.questionsAnswered+'题 · 正确'+ds.questionsCorrect+'题</div>';
+  const today=getTodaySummary(),pending=DB.getReviewTargets(true).length,focus=getRecommendedFocus();
+  document.getElementById('daily-bar').innerHTML='<div class="label">今日练习 · 随时开始，不设固定进度</div><div class="progress-track"><div class="progress-fill" style="width:'+(today.count?Math.round(today.accuracy*100):0)+'%"></div></div><div class="stats">'+today.count+'题 · 正确率'+Math.round(today.accuracy*100)+'% · 中位'+Math.round(today.median_ms/1000)+'秒 · 待强化'+pending+'类</div><div class="today-focus">建议重点：'+focus+'</div>';
+  const reviewBtn=document.getElementById('review-btn'); if(reviewBtn){ reviewBtn.textContent=pending?'🔄 待强化训练（'+pending+'类）':'🔄 暂无待强化内容'; reviewBtn.disabled=pending===0; }
   document.getElementById('diag-banner').style.display=DB.isDiagCompleted()?'none':'block';
 }
 
 function showPlaceholder(name){ const t=document.createElement('div'); t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 20px;border-radius:20px;font-size:14px;z-index:300;'; t.textContent='🔒 '+name+' — 付费版'; document.body.appendChild(t); setTimeout(()=>t.remove(),2000); }
 
 function handleModeClick(mode){
-  if(mode==='review'){ const w=DB.getWrongAnswers(); if(w.length===0){ showToast('暂无错题记录'); return; } AppState.pendingMode='review'; AppState.pendingTags=[]; handleStartRound(); return; }
+  if(mode==='review'){ const w=DB.getReviewTargets(true); if(w.length===0){ showToast('暂无待强化内容'); return; } AppState.pendingMode='review'; AppState.pendingTags=[]; handleStartRound(); return; }
   AppState.pendingMode=mode; AppState.pendingTags=[]; navigateTo('mode-select');
 }
 function renderModeSelect(){
-  const m=AppState.pendingMode; const cfg={random:{name:'随机出题',desc:'从全部模板均匀随机抽取10题。'},basic:{name:'基础巩固',desc:'数字更友好（2-3位为主），更多百化分特殊值。'},advanced:{name:'拔高挑战',desc:'数字更大（3-4位），步骤更多，陷阱更隐蔽。'},selftrain:{name:'自选练习',desc:'按运算类型选择模板分组。'}}[m]||{name:m,desc:''};
+  const m=AppState.pendingMode; const cfg={smart:{name:'智能训练',desc:'优先安排错题、慢题、不稳定结构和到期复习。'},random:{name:'随机出题',desc:'从已完成的题型生成器中随机抽取10题。'},basic:{name:'基础巩固',desc:'数字更友好（2-3位为主），更多百化分特殊值。'},advanced:{name:'拔高挑战',desc:'数字更大（3-4位），步骤更多，陷阱更隐蔽。'},selftrain:{name:'自选练习',desc:'按运算类型选择模板分组。'}}[m]||{name:m,desc:''};
   document.getElementById('mode-select-title').textContent=cfg.name; document.getElementById('mode-select-desc').textContent=cfg.desc;
   const tp=document.getElementById('tag-panel'),tc=document.getElementById('tag-chips');
   if(m==='selftrain'){ tp.style.display='block'; const tags=['加减法','乘法','除法','复合/比较']; tc.innerHTML=tags.map(t=>'<span class="tag-chip" data-tag="'+t+'" onclick="toggleTag(this)">'+t+'</span>').join(''); }
   else { tp.style.display='none'; AppState.pendingTags=[]; }
 }
 function toggleTag(el){ el.classList.toggle('selected'); AppState.pendingTags=[...document.querySelectorAll('#tag-chips .tag-chip.selected')].map(e=>e.dataset.tag); }
+
+function renderMastery(){
+  const stats=getMasteryStats(),root=document.getElementById('mastery-content');
+  if(!stats.length){ root.innerHTML='<div class="card text-center text-muted">完成一轮练习后，这里会按技能和数字结构显示熟练度。</div>'; return; }
+  const counts={'未掌握':0,'会做但慢':0,'不稳定':0,'已自动化':0}; stats.forEach(x=>counts[x.mastery_level]++);
+  let h='<div class="mastery-summary">'+Object.entries(counts).map(([k,v])=>'<div><strong>'+v+'</strong><span>'+k+'</span></div>').join('')+'</div>';
+  h+=stats.map(x=>'<div class="mastery-card"><div class="mastery-head"><strong>'+x.skill+'</strong><span class="mastery-level level-'+x.mastery_level+'">'+x.mastery_level+'</span></div><div class="mastery-structure">'+x.number_structure+'</div><div class="mastery-meta">练习 '+x.attempt_count+' 次 · 正确率 '+Math.round(x.accuracy*100)+'% · 中位 '+Math.round(x.median_time/1000)+' 秒</div></div>').join('');
+  root.innerHTML=h;
+}

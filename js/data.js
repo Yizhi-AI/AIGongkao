@@ -95,11 +95,12 @@ const TAG_GROUPS = {
 };
 
 const MODE_CONFIG = {
+  smart:{name:'智能训练',gapLevel:'medium'},
   random:{name:'随机出题',gapLevel:'medium'},
   basic:{name:'基础巩固',gapLevel:'medium'},
   advanced:{name:'拔高挑战',gapLevel:'narrow'},
   selftrain:{name:'自选练习',gapLevel:'medium'},
-  review:{name:'错题重练',gapLevel:'medium'},
+  review:{name:'待强化训练',gapLevel:'medium'},
   diagnostic:{name:'摸底测试',gapLevel:'narrow'},
 };
 
@@ -132,3 +133,55 @@ const ALL_TEMPLATES = [
 ];
 
 const TEMPLATE_MAP = {}; ALL_TEMPLATES.forEach(t => TEMPLATE_MAP[t.id] = t);
+
+/* ── Lightweight training labels ─────────────────────────────
+ * Only these four dimensions drive practice planning in V1.
+ * The original template/trap fields stay available for feedback.
+ */
+const TRAINING_META = {
+  A_pure_arithmetic:    {skill:'基础加减',cognitive_load:'低',number_structure:'多项加减与凑整',best_strategy:'先凑整或抵消',target_time_ms:25000},
+  E_accumulation_range: {skill:'基础加减',cognitive_load:'中',number_structure:'多位数连续累加',best_strategy:'首数估算并控制范围',target_time_ms:30000},
+  N_simple_division:    {skill:'直除估算',cognitive_load:'中',number_structure:'分子分母量级判断',best_strategy:'截位直除并回看量级',target_time_ms:35000},
+  S_avg_annual_increment:{skill:'增长计算',cognitive_load:'中',number_structure:'两期差除以年数',best_strategy:'先减后除',target_time_ms:35000},
+  B_percent_nested:     {skill:'百分数运算',cognitive_load:'中',number_structure:'百分数嵌套与同项',best_strategy:'先抵消再计算',target_time_ms:25000},
+  C_increment_threshold:{skill:'综合比较',cognitive_load:'高',number_structure:'多组结果与阈值',best_strategy:'先判量级再计数',target_time_ms:45000},
+  D_multi_group_compare:{skill:'综合比较',cognitive_load:'高',number_structure:'多组求和差比较',best_strategy:'首数估算与排除',target_time_ms:40000},
+  F_trend_cumulative:   {skill:'综合比较',cognitive_load:'高',number_structure:'连续数据趋势',best_strategy:'先判方向再计算',target_time_ms:40000},
+  X_fraction_comparison:{skill:'比重比较',cognitive_load:'中',number_structure:'相近分数比较',best_strategy:'直接比较或差分',target_time_ms:30000},
+  U_growth_rate:        {skill:'增长计算',cognitive_load:'中',number_structure:'现期与基期求增长率',best_strategy:'先求差再除基期',target_time_ms:35000},
+  G_basic_multiply:     {skill:'百分数运算',cognitive_load:'低',number_structure:'特殊百分数乘法',best_strategy:'优先百化分',target_time_ms:25000},
+  H_factor_shift:       {skill:'百分数运算',cognitive_load:'中',number_structure:'一加减增长率因子',best_strategy:'判断方向后化因子',target_time_ms:30000},
+  K_distributive:       {skill:'百分数运算',cognitive_load:'中',number_structure:'相同因子乘积差',best_strategy:'提取公因式',target_time_ms:25000},
+  M_compound_growth:    {skill:'增长计算',cognitive_load:'中',number_structure:'两段增长率复合',best_strategy:'使用间隔增长公式',target_time_ms:25000},
+  I_chained_multiply:   {skill:'乘除混合',cognitive_load:'高',number_structure:'连续乘法与约分',best_strategy:'先约分后连乘',target_time_ms:35000},
+  J_mixed_multiply_add: {skill:'乘除混合',cognitive_load:'高',number_structure:'乘加减混合',best_strategy:'找抵消项再估算',target_time_ms:40000},
+  L_multi_product_compare:{skill:'综合比较',cognitive_load:'高',number_structure:'多组乘积比较',best_strategy:'先看量级和首数',target_time_ms:45000},
+  O_sum_division:       {skill:'直除估算',cognitive_load:'高',number_structure:'多项求和后相除',best_strategy:'先完整求和再截位',target_time_ms:40000},
+  P_base_period:        {skill:'增长计算',cognitive_load:'高',number_structure:'现期除以一加减增长率',best_strategy:'百化分或截位直除',target_time_ms:35000},
+  Q_mixed_division:     {skill:'乘除混合',cognitive_load:'高',number_structure:'乘除混合与约分',best_strategy:'先约分再计算',target_time_ms:40000},
+  R_division_threshold: {skill:'综合比较',cognitive_load:'高',number_structure:'多组除法与阈值',best_strategy:'先判量级再计数',target_time_ms:45000},
+  T_growth_amount:      {skill:'增长计算',cognitive_load:'中',number_structure:'增长量与特殊百分数',best_strategy:'百化分求增长量',target_time_ms:30000},
+  V_two_ratio_diff:     {skill:'比重比较',cognitive_load:'高',number_structure:'两个比值作差',best_strategy:'先判方向再截位',target_time_ms:45000},
+  W_ratio_transformation:{skill:'比重比较',cognitive_load:'高',number_structure:'比重关系变形',best_strategy:'套用比重变化关系',target_time_ms:45000}
+};
+
+ALL_TEMPLATES.forEach(t => Object.assign(t, TRAINING_META[t.id] || {}));
+
+function decorateQuestion(q, templateId){
+  const tid=templateId||q.templateId||q.template_id;
+  const tmpl=TEMPLATE_MAP[tid]||{};
+  const meta=TRAINING_META[tid]||{};
+  q.templateId=tid;
+  q.template_id=tid;
+  q.templateName=tmpl.name||q.templateName||tid;
+  q.question_id=q.question_id||q.id;
+  q.question_text=q.question_text||(q.question&&q.question.text)||'';
+  q.answer=q.answer!==undefined?q.answer:(q.correct?q.correct.value:null);
+  q.skill=meta.skill||'综合计算';
+  q.cognitive_load=meta.cognitive_load||'中';
+  q.number_structure=meta.number_structure||tmpl.name||'一般数字结构';
+  q.best_strategy=meta.best_strategy||(tmpl.solution_strategy&&tmpl.solution_strategy[0])||'先判断结构再计算';
+  q.target_time_ms=meta.target_time_ms||30000;
+  q.target_time=q.target_time_ms;
+  return q;
+}
